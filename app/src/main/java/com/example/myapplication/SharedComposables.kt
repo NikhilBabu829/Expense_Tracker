@@ -271,27 +271,32 @@ fun SheetListItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SheetDetailScreen(
     sheet: ExpenseSheet,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onIncomeChange: (Double) -> Unit,
+    onAddExpenseClick: () -> Unit
 ) {
-    val dummyExpenses = emptyList<Expense>()
+    var incomeText by remember(sheet.id, sheet.income) {
+        mutableStateOf(if (sheet.income == 0.0) "" else sheet.income.toString())
+    }
+
+    val totalExpenses = sheet.expenses.sumOf { it.amount }
+    val surplus = sheet.income - totalExpenses
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // Top bar
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = onBack) {
                 Text("Back")
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
             Column {
                 Text(
                     text = "${sheet.month} ${sheet.year}",
@@ -299,7 +304,7 @@ fun SheetDetailScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Monthly expenses",
+                    text = "Monthly overview",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -307,21 +312,91 @@ fun SheetDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (dummyExpenses.isEmpty()) {
+        // Income input
+        Text(
+            text = "Monthly income",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        TextField(
+            value = incomeText,
+            onValueChange = { incomeText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Enter your salary for this month") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                val newIncome = incomeText.toDoubleOrNull()
+                if (newIncome != null) {
+                    onIncomeChange(newIncome)
+                }
+            }
+        ) {
+            Text("Save income")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Summary
+        Text(
+            text = "Summary",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text("Income: ${"%.2f".format(sheet.income)}")
+        Text("Total expenses: ${"%.2f".format(totalExpenses)}")
+
+        if (sheet.income == 0.0 && sheet.expenses.isEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Enter your monthly income and add expenses to see your balance.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            Spacer(modifier = Modifier.height(4.dp))
+            if (surplus >= 0) {
+                Text("You have ${"%.2f".format(surplus)} left this month.")
+            } else {
+                Text("You are short of ${"%.2f".format(-surplus)} this month.")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Add expense button
+        Button(onClick = onAddExpenseClick) {
+            Text("Add expense")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // List of expenses for this month
+        if (sheet.expenses.isEmpty()) {
             Text(
                 text = "No expenses added yet for this month.",
                 style = MaterialTheme.typography.bodyMedium
             )
-            Text(
-                text = "Soon you'll be able to add items like rent, groceries, travel, etc.",
-                style = MaterialTheme.typography.bodySmall
-            )
         } else {
+            Text(
+                text = "Expenses:",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
             LazyColumn {
-                items(dummyExpenses) { expense ->
-                    Text("${expense.description}: ${expense.amount}")
+                items(sheet.expenses) { expense ->
+                    ExpenseListItem(expense = expense)
                 }
             }
         }
     }
 }
+
