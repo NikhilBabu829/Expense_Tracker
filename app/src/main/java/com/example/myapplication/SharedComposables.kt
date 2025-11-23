@@ -1,5 +1,7 @@
 package com.example.myapplication
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,13 +21,21 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.unit.Dp
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 
 data class ExpenseSheet(
     val id: Int,
     val month: String,
-    val year: Int
+    val year: Int,
+    val income: Double = 0.0,
+    val expenses: List<Expense> = emptyList(),
+    val monthIndex: Int = 1
 )
+
 data class Expense(
     val id: Int,
     val description: String,
@@ -37,14 +47,22 @@ data class Expense(
 sealed class Screen {
     object SheetList : Screen()
     data class SheetDetail(val sheetId: Int) : Screen()
-    data class AddExpense(val sheetId: Int) : Screen()
+    data class AddOrEditExpense(val sheetId: Int, val expenseId: Int?) : Screen()
+    object IncomeExpenses : Screen()
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ExpenseTrackerApp() {
+fun ExpenseTrackerApp(dbHelper: ExpenseDbHelper) {
     var sheets by remember { mutableStateOf(listOf<ExpenseSheet>()) }
-    var nextSheetId by remember { mutableStateOf(1) }
-    var nextExpenseId by remember { mutableStateOf(1) }
+
+    LaunchedEffect(Unit) {
+        sheets = dbHelper.getAllSheetsWithExpenses()
+    }
+
+    fun reloadFromDb() {
+        sheets = dbHelper.getAllSheetsWithExpenses()
+    }
 
     var currentScreen by remember { mutableStateOf<Screen>(Screen.SheetList) }
 
@@ -54,22 +72,26 @@ fun ExpenseTrackerApp() {
                 is Screen.SheetList -> {
                     SheetListScreen(
                         sheets = sheets,
-                        onCreateSheet = { month, year ->
-                            val cleanMonth = month.trim()
-                            val yearInt = year.toIntOrNull()
-
-                            if (cleanMonth.isNotEmpty() && yearInt != null) {
-                                val newSheet = ExpenseSheet(
-                                    id = nextSheetId,
-                                    month = cleanMonth,
+                        onCreateSheet = { monthName, yearStr, monthIndex ->
+                            val yearInt = yearStr.toIntOrNull()
+                            if (yearInt != null && monthName.isNotBlank()) {
+                                dbHelper.insertSheet(
+                                    monthName = monthName.trim(),
+                                    monthIndex = monthIndex,
                                     year = yearInt
                                 )
-                                sheets = sheets + newSheet
-                                nextSheetId++
+                                reloadFromDb()
                             }
                         },
                         onOpenSheet = { sheetId ->
                             currentScreen = Screen.SheetDetail(sheetId)
+                        },
+                        onOpenIncomeExpensesChart = {
+                            currentScreen = Screen.IncomeExpenses
+                        },
+                        onDeleteSheet = { sheetId ->
+                            dbHelper.deleteSheet(sheetId)
+                            reloadFromDb()
                         }
                     )
                 }
@@ -83,61 +105,82 @@ fun ExpenseTrackerApp() {
                             sheet = sheet,
                             onBack = { currentScreen = Screen.SheetList },
                             onIncomeChange = { newIncome ->
-                                sheets = sheets.map {
-                                    if (it.id == sheet.id) it.copy(income = newIncome)
-                                    else it
-                                }
+                                dbHelper.updateSheetIncome(sheet.id, newIncome)
+                                reloadFromDb()
                             },
                             onAddExpenseClick = {
-                                currentScreen = Screen.AddExpense(sheet.id)
+                                currentScreen = Screen.AddOrEditExpense(sheet.id, null)
+                            },
+                            onEditExpense = { expenseId ->
+                                currentScreen = Screen.AddOrEditExpense(sheet.id, expenseId)
+                            },
+                            onDeleteExpense = { expenseId ->
+                                dbHelper.deleteExpense(expenseId)
+                                reloadFromDb()
                             }
                         )
                     }
                 }
 
-                is Screen.AddExpense -> {
+                is Screen.AddOrEditExpense -> {
                     val sheet = sheets.find { it.id == screen.sheetId }
                     if (sheet == null) {
                         currentScreen = Screen.SheetList
                     } else {
+                        val existingExpense = sheet.expenses.find { it.id == screen.expenseId }
+
                         AddExpenseScreen(
                             sheet = sheet,
+                            existingExpense = existingExpense,   // <-- IMPORTANT
                             onBack = { currentScreen = Screen.SheetDetail(sheet.id) },
-                            onSaveExpense = { description, amount, category, day ->
-                                val newExpense = Expense(
-                                    id = nextExpenseId,
-                                    description = description,
-                                    amount = amount,
-                                    category = category,
-                                    dayOfMonth = day
-                                )
-
-                                sheets = sheets.map {
-                                    if (it.id == sheet.id) {
-                                        it.copy(expenses = it.expenses + newExpense)
-                                    } else it
+                            onSaveExpense = { desc, amount, cat, day ->
+                                if (existingExpense == null) {
+                                    // NEW EXPENSE
+                                    dbHelper.insertExpense(
+                                        sheetId = sheet.id,
+                                        description = desc,
+                                        category = cat,
+                                        amount = amount,
+                                        dayOfMonth = day
+                                    )
+                                } else {
+                                    // UPDATE EXPENSE
+                                    val updated = existingExpense.copy(
+                                        description = desc,
+                                        amount = amount,
+                                        category = cat,
+                                        dayOfMonth = day
+                                    )
+                                    dbHelper.updateExpense(sheet.id, updated)
                                 }
-
-                                nextExpenseId++
+                                reloadFromDb()
                                 currentScreen = Screen.SheetDetail(sheet.id)
                             }
+
                         )
                     }
+                }
+
+                Screen.IncomeExpenses -> {
+                    IncomeExpensesScreen(
+                        sheets = sheets,
+                        onBack = { currentScreen = Screen.SheetList }
+                    )
                 }
             }
         }
     }
 }
 
-
-
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun SheetListScreen(
     sheets: List<ExpenseSheet>,
-    onCreateSheet: (month: String, year: String) -> Unit,
-    onOpenSheet: (sheetId: Int) -> Unit
+    onCreateSheet: (month: String, year: String, monthIndex: Int) -> Unit,
+    onOpenSheet: (sheetId: Int) -> Unit,
+    onOpenIncomeExpensesChart: () -> Unit,
+    onDeleteSheet: (sheetId: Int) -> Unit
 ) {
-
     var showNewSheetForm by remember { mutableStateOf(false) }
 
     Column(
@@ -160,17 +203,29 @@ fun SheetListScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { showNewSheetForm = !showNewSheetForm }) {
-            Text(
-                text = if (showNewSheetForm) "Hide new sheet form" else "Create new sheet"
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = { showNewSheetForm = !showNewSheetForm }) {
+                Text(
+                    text = if (showNewSheetForm) "Hide new sheet form" else "Create new sheet"
+                )
+            }
+
+            Button(
+                enabled = sheets.size >= 1,
+                onClick = onOpenIncomeExpensesChart
+            ) {
+                Text("Income/Expenses chart")
+            }
         }
 
         if (showNewSheetForm) {
             Spacer(modifier = Modifier.height(12.dp))
             NewSheetForm(
-                onCreateSheet = { month, year ->
-                    onCreateSheet(month, year)
+                onCreateSheet = { month, year, monthIndex ->
+                    onCreateSheet(month, year, monthIndex)
                     showNewSheetForm = false
                 }
             )
@@ -189,7 +244,6 @@ fun SheetListScreen(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(
@@ -198,7 +252,8 @@ fun SheetListScreen(
                 items(sheets) { sheet ->
                     SheetListItem(
                         sheet = sheet,
-                        onClick = { onOpenSheet(sheet.id) }
+                        onClick = { onOpenSheet(sheet.id) },
+                        onDelete = { onDeleteSheet(sheet.id) }
                     )
                 }
             }
@@ -206,13 +261,21 @@ fun SheetListScreen(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewSheetForm(
-    onCreateSheet: (month: String, year: String) -> Unit
+    onCreateSheet: (month: String, year: String, monthIndex: Int) -> Unit
 ) {
-    var monthText by remember { mutableStateOf("") }
-    var yearText by remember { mutableStateOf("") }
+    val now = remember { LocalDate.now() }
+    val defaultMonthName = remember {
+        now.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+    }
+    val defaultYear = remember { now.year.toString() }
+    val defaultMonthIndex = now.monthValue
+
+    var monthText by remember { mutableStateOf(defaultMonthName) }
+    var yearText by remember { mutableStateOf(defaultYear) }
 
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -229,7 +292,7 @@ fun NewSheetForm(
             value = monthText,
             onValueChange = { monthText = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Month (e.g. January)") }
+            label = { Text("Month") }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -238,14 +301,14 @@ fun NewSheetForm(
             value = yearText,
             onValueChange = { yearText = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Year (e.g. 2025)") }
+            label = { Text("Year") }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = {
-                onCreateSheet(monthText, yearText)
+                onCreateSheet(monthText, yearText, defaultMonthIndex)
             }
         ) {
             Text("Save sheet")
@@ -256,23 +319,37 @@ fun NewSheetForm(
 @Composable
 fun SheetListItem(
     sheet: ExpenseSheet,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
             .padding(vertical = 12.dp)
     ) {
-        Text(
-            text = "${sheet.month} ${sheet.year}",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Tap to view or edit expenses",
-            style = MaterialTheme.typography.bodySmall
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${sheet.month} ${sheet.year}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Tap to view or edit expenses",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            // Small delete button on the right
+            Button(onClick = onDelete) {
+                Text("Delete")
+            }
+        }
     }
 }
 
@@ -282,7 +359,9 @@ fun SheetDetailScreen(
     sheet: ExpenseSheet,
     onBack: () -> Unit,
     onIncomeChange: (Double) -> Unit,
-    onAddExpenseClick: () -> Unit
+    onAddExpenseClick: () -> Unit,
+    onEditExpense: (expenseId: Int) -> Unit,
+    onDeleteExpense: (expenseId: Int) -> Unit
 ) {
     var incomeText by remember(sheet.id, sheet.income) {
         mutableStateOf(if (sheet.income == 0.0) "" else sheet.income.toString())
@@ -382,7 +461,6 @@ fun SheetDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // List of expenses for this month
         if (sheet.expenses.isEmpty()) {
             Text(
                 text = "No expenses added yet for this month.",
@@ -398,7 +476,11 @@ fun SheetDetailScreen(
 
             LazyColumn {
                 items(sheet.expenses) { expense ->
-                    ExpenseListItem(expense = expense)
+                    ExpenseListItem(
+                        expense = expense,
+                        onEdit = { onEditExpense(expense.id) },
+                        onDelete = { onDeleteExpense(expense.id) }
+                    )
                 }
             }
         }
@@ -406,7 +488,11 @@ fun SheetDetailScreen(
 }
 
 @Composable
-fun ExpenseListItem(expense: Expense) {
+fun ExpenseListItem(
+    expense: Expense,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -425,21 +511,49 @@ fun ExpenseListItem(expense: Expense) {
             text = "Amount: ${"%.2f".format(expense.amount)}",
             style = MaterialTheme.typography.bodySmall
         )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = onEdit) {
+                Text("Edit")
+            }
+            Button(onClick = onDelete) {
+                Text("Delete")
+            }
+        }
     }
 }
 
+
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddExpenseScreen(
     sheet: ExpenseSheet,
+    existingExpense: Expense?,
     onBack: () -> Unit,
-    onSaveExpense: (description: String, amount: Double, category: String, day: Int) -> Unit
+    onSaveExpense: (String, Double, String, Int) -> Unit
 ) {
-    var descriptionText by remember { mutableStateOf("") }
-    var amountText by remember { mutableStateOf("") }
-    var categoryText by remember { mutableStateOf("") }
-    var dayText by remember { mutableStateOf("") }
+    var descriptionText by remember(existingExpense?.id) {
+        mutableStateOf(existingExpense?.description ?: "")
+    }
+    var amountText by remember(existingExpense?.id) {
+        mutableStateOf(existingExpense?.amount?.toString() ?: "")
+    }
+    var categoryText by remember(existingExpense?.id) {
+        mutableStateOf(existingExpense?.category ?: "")
+    }
+    val defaultDay = remember { LocalDate.now().dayOfMonth.toString() }
+
+    var dayText by remember(existingExpense?.id) {
+        mutableStateOf(existingExpense?.dayOfMonth?.toString() ?: defaultDay)
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val titleText = if (existingExpense == null) "Add expense" else "Edit expense"
 
     Column(
         modifier = Modifier
@@ -453,7 +567,7 @@ fun AddExpenseScreen(
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
-                    text = "Add expense",
+                    text = titleText,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -535,6 +649,98 @@ fun AddExpenseScreen(
 }
 
 @Composable
+fun IncomeExpensesScreen(
+    sheets: List<ExpenseSheet>,
+    onBack: () -> Unit
+) {
+    val sortedSheets = remember(sheets) {
+        sheets.sortedWith(compareBy({ it.year }, { it.monthIndex }))
+    }
+
+    val maxStartIndex = (sortedSheets.size - 4).coerceAtLeast(0)
+
+    var startIndex by remember(sortedSheets.size) {
+        mutableStateOf(maxStartIndex)
+    }
+
+    val visibleSheets = sortedSheets
+        .drop(startIndex)
+        .take(4)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onBack) {
+                Text("Back")
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "Income/Expenses",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Drag left/right to view other months",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (sortedSheets.isEmpty()) {
+            Text(
+                text = "You need at least one month with income/expenses to view the chart.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .pointerInput(sortedSheets.size) {
+                        var accumulated = 0f
+                        val threshold = 80f
+
+                        detectHorizontalDragGestures(
+                            onDragStart = { /* no-op */ },
+                            onHorizontalDrag = { _, dragAmount ->
+                                accumulated += dragAmount
+
+                                if (accumulated > threshold && startIndex > 0) {
+                                    startIndex--
+                                    accumulated = 0f
+                                } else if (accumulated < -threshold && startIndex < maxStartIndex) {
+                                    startIndex++
+                                    accumulated = 0f
+                                }
+                            },
+                            onDragEnd = { accumulated = 0f },
+                            onDragCancel = { accumulated = 0f }
+                        )
+
+                    }
+            ) {
+                IncomeExpensesChart(sheets = visibleSheets)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Showing months ${startIndex + 1} to " +
+                        "${(startIndex + visibleSheets.size).coerceAtMost(sortedSheets.size)} " +
+                        "of ${sortedSheets.size}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
 fun IncomeExpensesChart(
     sheets: List<ExpenseSheet>
 ) {
@@ -551,7 +757,6 @@ fun IncomeExpensesChart(
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Title
         Text(
             text = "Income/Expenses",
             style = MaterialTheme.typography.titleMedium,
@@ -586,7 +791,6 @@ fun IncomeExpensesChart(
                     end = Offset(chartLeft, chartBottom),
                     strokeWidth = 3f
                 )
-
                 drawLine(
                     color = axisColor,
                     start = Offset(chartLeft, chartBottom),
@@ -674,7 +878,6 @@ fun IncomeExpensesChart(
         )
     }
 }
-
 
 
 

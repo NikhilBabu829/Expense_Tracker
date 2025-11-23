@@ -1,7 +1,5 @@
 package com.example.myapplication
 
-package com.example.expensetracker
-
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -47,11 +45,9 @@ class ExpenseDbHelper(context: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_EXPENSES")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_SHEETS")
         onCreate(db)
     }
 
-    // --- Public API to use from Compose / Activity ---
 
     fun getAllSheetsWithExpenses(): List<ExpenseSheet> {
         val result = mutableListOf<ExpenseSheet>()
@@ -157,7 +153,6 @@ class ExpenseDbHelper(context: Context) :
         return db.delete(TABLE_EXPENSES, "id = ?", arrayOf(expenseId.toString()))
     }
 
-    // --- internal helper for expenses per sheet ---
 
     private fun getExpensesForSheetInternal(
         db: SQLiteDatabase,
@@ -173,26 +168,6 @@ class ExpenseDbHelper(context: Context) :
             null,
             "day_of_month ASC"
         )
-
-        cursor.use { c ->
-            while (c.moveToNext()) {
-                val id = c.getInt(0)
-                val description = c.getString(1)
-                val category = c.getString(2) ?: ""
-                val amount = c.getDouble(3)
-                val day = c.getInt(4)
-
-                result.add(
-                    Expense(
-                        id = id,
-                        description = description,
-                        amount = amount,
-                        category = category,
-                        dayOfMonth = day
-                    )
-                )
-            }
-        }
 
         return result
     }
