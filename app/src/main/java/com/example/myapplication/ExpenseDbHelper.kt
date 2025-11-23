@@ -45,9 +45,9 @@ class ExpenseDbHelper(context: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_EXPENSES")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_SHEETS")
         onCreate(db)
     }
-
 
     fun getAllSheetsWithExpenses(): List<ExpenseSheet> {
         val result = mutableListOf<ExpenseSheet>()
@@ -154,6 +154,14 @@ class ExpenseDbHelper(context: Context) :
     }
 
 
+    fun deleteSheet(sheetId: Int): Int {
+        val db = writableDatabase
+        // First delete all expenses for this sheet
+        db.delete("expenses", "sheet_id = ?", arrayOf(sheetId.toString()))
+        // Then delete the sheet
+        return db.delete("sheets", "id = ?", arrayOf(sheetId.toString()))
+    }
+
     private fun getExpensesForSheetInternal(
         db: SQLiteDatabase,
         sheetId: Int
@@ -168,6 +176,26 @@ class ExpenseDbHelper(context: Context) :
             null,
             "day_of_month ASC"
         )
+
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getInt(0)
+                val description = c.getString(1)
+                val category = c.getString(2) ?: ""
+                val amount = c.getDouble(3)
+                val day = c.getInt(4)
+
+                result.add(
+                    Expense(
+                        id = id,
+                        description = description,
+                        amount = amount,
+                        category = category,
+                        dayOfMonth = day
+                    )
+                )
+            }
+        }
 
         return result
     }

@@ -59,7 +59,6 @@ fun ExpenseTrackerApp(dbHelper: ExpenseDbHelper) {
     LaunchedEffect(Unit) {
         sheets = dbHelper.getAllSheetsWithExpenses()
     }
-
     fun reloadFromDb() {
         sheets = dbHelper.getAllSheetsWithExpenses()
     }
@@ -131,11 +130,10 @@ fun ExpenseTrackerApp(dbHelper: ExpenseDbHelper) {
 
                         AddExpenseScreen(
                             sheet = sheet,
-                            existingExpense = existingExpense,   // <-- IMPORTANT
+                            existingExpense = existingExpense,
                             onBack = { currentScreen = Screen.SheetDetail(sheet.id) },
                             onSaveExpense = { desc, amount, cat, day ->
                                 if (existingExpense == null) {
-                                    // NEW EXPENSE
                                     dbHelper.insertExpense(
                                         sheetId = sheet.id,
                                         description = desc,
@@ -144,7 +142,6 @@ fun ExpenseTrackerApp(dbHelper: ExpenseDbHelper) {
                                         dayOfMonth = day
                                     )
                                 } else {
-                                    // UPDATE EXPENSE
                                     val updated = existingExpense.copy(
                                         description = desc,
                                         amount = amount,
@@ -345,7 +342,6 @@ fun SheetListItem(
                 )
             }
 
-            // Small delete button on the right
             Button(onClick = onDelete) {
                 Text("Delete")
             }
@@ -375,7 +371,6 @@ fun SheetDetailScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Top bar
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = onBack) {
                 Text("Back")
@@ -396,7 +391,6 @@ fun SheetDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Income input
         Text(
             text = "Monthly income",
             style = MaterialTheme.typography.titleMedium,
@@ -426,7 +420,6 @@ fun SheetDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Summary
         Text(
             text = "Summary",
             style = MaterialTheme.typography.titleMedium,
@@ -454,7 +447,6 @@ fun SheetDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Add expense button
         Button(onClick = onAddExpenseClick) {
             Text("Add expense")
         }
@@ -707,7 +699,7 @@ fun IncomeExpensesScreen(
                         val threshold = 80f
 
                         detectHorizontalDragGestures(
-                            onDragStart = { /* no-op */ },
+                            onDragStart = {},
                             onHorizontalDrag = { _, dragAmount ->
                                 accumulated += dragAmount
 
@@ -744,6 +736,7 @@ fun IncomeExpensesScreen(
 fun IncomeExpensesChart(
     sheets: List<ExpenseSheet>
 ) {
+
     val incomes = sheets.map { it.income }
     val expenses = sheets.map { it.expenses.sumOf { e -> e.amount } }
 
