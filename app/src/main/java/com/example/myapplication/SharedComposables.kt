@@ -15,6 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.Dp
 
 data class ExpenseSheet(
     val id: Int,
@@ -528,6 +533,148 @@ fun AddExpenseScreen(
         }
     }
 }
+
+@Composable
+fun IncomeExpensesChart(
+    sheets: List<ExpenseSheet>
+) {
+    val incomes = sheets.map { it.income }
+    val expenses = sheets.map { it.expenses.sumOf { e -> e.amount } }
+
+    val maxValue = (incomes + expenses).maxOrNull() ?: 0.0
+    val safeMax = if (maxValue <= 0.0) 1.0 else maxValue
+
+    val incomeColor = Color(0xFF1565C0)
+    val expenseColor = Color(0xFFC62828)
+    val axisColor = Color.Black
+
+    Column(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // Title
+        Text(
+            text = "Income/Expenses",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .padding(8.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+
+                val leftPadding = 60f
+                val rightPadding = 24f
+                val topPadding = 24f
+                val bottomPadding = 60f
+
+                val chartLeft = leftPadding
+                val chartRight = width - rightPadding
+                val chartTop = topPadding
+                val chartBottom = height - bottomPadding
+
+                drawLine(
+                    color = axisColor,
+                    start = Offset(chartLeft, chartTop),
+                    end = Offset(chartLeft, chartBottom),
+                    strokeWidth = 3f
+                )
+
+                drawLine(
+                    color = axisColor,
+                    start = Offset(chartLeft, chartBottom),
+                    end = Offset(chartRight, chartBottom),
+                    strokeWidth = 3f
+                )
+
+                val count = sheets.size
+                if (count >= 1) {
+                    val chartWidth = chartRight - chartLeft
+                    val chartHeight = chartBottom - chartTop
+
+                    val stepX = if (count > 1) chartWidth / (count - 1) else 0f
+
+                    val incomePath = Path()
+                    val expensePath = Path()
+
+                    for (i in 0 until count) {
+                        val x = chartLeft + stepX * i
+                        val incomeY = chartBottom - (incomes[i] / safeMax).toFloat() * chartHeight
+                        val expenseY = chartBottom - (expenses[i] / safeMax).toFloat() * chartHeight
+
+                        if (i == 0) {
+                            incomePath.moveTo(x, incomeY)
+                            expensePath.moveTo(x, expenseY)
+                        } else {
+                            incomePath.lineTo(x, incomeY)
+                            expensePath.lineTo(x, expenseY)
+                        }
+                    }
+
+                    drawPath(
+                        path = incomePath,
+                        color = incomeColor,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
+                    )
+                    drawPath(
+                        path = expensePath,
+                        color = expenseColor,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
+                    )
+
+                    for (i in 0 until count) {
+                        val x = chartLeft + stepX * i
+                        val incomeY = chartBottom - (incomes[i] / safeMax).toFloat() * chartHeight
+                        val expenseY = chartBottom - (expenses[i] / safeMax).toFloat() * chartHeight
+
+                        drawCircle(
+                            color = incomeColor,
+                            radius = 6f,
+                            center = Offset(x, incomeY)
+                        )
+                        drawCircle(
+                            color = expenseColor,
+                            radius = 6f,
+                            center = Offset(x, expenseY)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            sheets.forEach { sheet ->
+                val label = "${sheet.month.take(3)}\n${sheet.year}"
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = "Y-axis: amount (0 to ~${"%.2f".format(maxValue)})",
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
 
 
 
