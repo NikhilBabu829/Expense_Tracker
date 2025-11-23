@@ -400,3 +400,134 @@ fun SheetDetailScreen(
     }
 }
 
+@Composable
+fun ExpenseListItem(expense: Expense) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Text(
+            text = "${expense.dayOfMonth} - ${expense.description}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Category: ${expense.category}",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = "Amount: ${"%.2f".format(expense.amount)}",
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddExpenseScreen(
+    sheet: ExpenseSheet,
+    onBack: () -> Unit,
+    onSaveExpense: (description: String, amount: Double, category: String, day: Int) -> Unit
+) {
+    var descriptionText by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    var categoryText by remember { mutableStateOf("") }
+    var dayText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onBack) {
+                Text("Cancel")
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "Add expense",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "For ${sheet.month} ${sheet.year}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextField(
+            value = dayText,
+            onValueChange = { dayText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Day of month (1–31)") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TextField(
+            value = descriptionText,
+            onValueChange = { descriptionText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Description (e.g. Groceries)") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TextField(
+            value = categoryText,
+            onValueChange = { categoryText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Category (e.g. Food, Rent)") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TextField(
+            value = amountText,
+            onValueChange = { amountText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Amount") }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage!!,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+
+        Button(
+            onClick = {
+                val day = dayText.toIntOrNull()
+                val amount = amountText.toDoubleOrNull()
+                val description = descriptionText.trim()
+                val category = categoryText.trim()
+
+                if (day == null || day !in 1..31) {
+                    errorMessage = "Please enter a valid day between 1 and 31."
+                } else if (amount == null || amount <= 0.0) {
+                    errorMessage = "Please enter a valid amount greater than 0."
+                } else if (description.isEmpty()) {
+                    errorMessage = "Please enter a description."
+                } else {
+                    errorMessage = null
+                    onSaveExpense(description, amount, category, day)
+                }
+            }
+        ) {
+            Text("Save expense")
+        }
+    }
+}
+
+
+
