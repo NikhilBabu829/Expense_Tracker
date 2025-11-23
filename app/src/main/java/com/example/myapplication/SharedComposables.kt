@@ -25,26 +25,26 @@ data class Expense(
     val id: Int,
     val description: String,
     val amount: Double,
-    val category: String
+    val category: String,
+    val dayOfMonth: Int
 )
 
 sealed class Screen {
     object SheetList : Screen()
     data class SheetDetail(val sheetId: Int) : Screen()
+    data class AddExpense(val sheetId: Int) : Screen()
 }
 
 @Composable
 fun ExpenseTrackerApp() {
     var sheets by remember { mutableStateOf(listOf<ExpenseSheet>()) }
-
     var nextSheetId by remember { mutableStateOf(1) }
+    var nextExpenseId by remember { mutableStateOf(1) }
 
     var currentScreen by remember { mutableStateOf<Screen>(Screen.SheetList) }
 
     MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize()
-        ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
             when (val screen = currentScreen) {
                 is Screen.SheetList -> {
                     SheetListScreen(
@@ -71,13 +71,51 @@ fun ExpenseTrackerApp() {
 
                 is Screen.SheetDetail -> {
                     val sheet = sheets.find { it.id == screen.sheetId }
-
                     if (sheet == null) {
                         currentScreen = Screen.SheetList
                     } else {
                         SheetDetailScreen(
                             sheet = sheet,
-                            onBack = { currentScreen = Screen.SheetList }
+                            onBack = { currentScreen = Screen.SheetList },
+                            onIncomeChange = { newIncome ->
+                                sheets = sheets.map {
+                                    if (it.id == sheet.id) it.copy(income = newIncome)
+                                    else it
+                                }
+                            },
+                            onAddExpenseClick = {
+                                currentScreen = Screen.AddExpense(sheet.id)
+                            }
+                        )
+                    }
+                }
+
+                is Screen.AddExpense -> {
+                    val sheet = sheets.find { it.id == screen.sheetId }
+                    if (sheet == null) {
+                        currentScreen = Screen.SheetList
+                    } else {
+                        AddExpenseScreen(
+                            sheet = sheet,
+                            onBack = { currentScreen = Screen.SheetDetail(sheet.id) },
+                            onSaveExpense = { description, amount, category, day ->
+                                val newExpense = Expense(
+                                    id = nextExpenseId,
+                                    description = description,
+                                    amount = amount,
+                                    category = category,
+                                    dayOfMonth = day
+                                )
+
+                                sheets = sheets.map {
+                                    if (it.id == sheet.id) {
+                                        it.copy(expenses = it.expenses + newExpense)
+                                    } else it
+                                }
+
+                                nextExpenseId++
+                                currentScreen = Screen.SheetDetail(sheet.id)
+                            }
                         )
                     }
                 }
@@ -85,6 +123,7 @@ fun ExpenseTrackerApp() {
         }
     }
 }
+
 
 
 @Composable
